@@ -97,8 +97,16 @@ def admin_report(db: Session = Depends(get_db), user: User = Depends(require_rol
     gmv = sum(t.amount for t in txns)
     disputes = db.query(Dispute).count()
     dispute_rate = (disputes / max(1, len(txns))) * 100
-    since = date.today() - timedelta(days=3)
     harvest_sold = db.query(Lot).filter(Lot.status.in_(["sold", "delivered"])).count()
+    open_lots = db.query(Lot).filter(Lot.status.in_(["listed", "offered"])).count()
+    pending_offers = db.query(Offer).filter(Offer.status == "pending").count()
+    held_escrow = sum(t.amount for t in txns if t.escrow_status == "held")
+    recent_lots = db.query(Lot).order_by(Lot.created_at.desc()).limit(7).all()
+    recent_transactions = db.query(Transaction).order_by(Transaction.created_at.desc()).limit(5).all()
+    commodity_mix = {}
+    for lot in db.query(Lot).all():
+        commodity_mix[lot.commodity] = commodity_mix.get(lot.commodity, 0) + lot.quantity_kg
+
     return {
         "adoption": {"farmers": farmers, "fpos": fpos, "buyers": buyers, "active_users": farmers + fpos + buyers},
         "gmv": round(gmv, 2),
@@ -107,5 +115,35 @@ def admin_report(db: Session = Depends(get_db), user: User = Depends(require_rol
         "dispute_rate_pct": round(dispute_rate, 2),
         "forecast_validated_pct": 74.0,
         "sold_lots": harvest_sold,
+        "open_lots": open_lots,
+        "pending_offers": pending_offers,
+        "held_escrow": round(held_escrow, 2),
         "pipeline": "AGMARKNET mock cache healthy",
+        "commodity_mix": [
+            {"commodity": commodity, "quantity_kg": round(quantity, 1)}
+            for commodity, quantity in sorted(commodity_mix.items(), key=lambda item: item[1], reverse=True)
+        ],
+        "recent_lots": [
+            {
+                "id": lot.id,
+                "commodity": lot.commodity,
+                "quantity_kg": lot.quantity_kg,
+                "status": lot.status,
+                "location": lot.location_name,
+                "farmer": lot.farmer.name if lot.farmer else "—",
+                "created_at": lot.created_at.strftime("%d %b, %H:%M") if lot.created_at else "—",
+            }
+            for lot in recent_lots
+        ],
+        "recent_transactions": [
+            {
+                "id": txn.id,
+                "commodity": txn.offer.lot.commodity if txn.offer and txn.offer.lot else "—",
+                "amount": round(txn.amount, 2),
+                "status": txn.escrow_status,
+                "buyer": txn.offer.buyer.name if txn.offer and txn.offer.buyer else "—",
+                "created_at": txn.created_at.strftime("%d %b, %H:%M") if txn.created_at else "—",
+            }
+            for txn in recent_transactions
+        ],
     }

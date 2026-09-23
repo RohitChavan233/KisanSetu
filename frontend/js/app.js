@@ -58,7 +58,7 @@ function speak(text) {
 }
 
 function logout(callApi) {
-  if (callApi) api("/auth/logout", { method: "POST" }).catch(() => {});
+  if (callApi) api("/auth/logout", { method: "POST" }).catch(() => { });
   token = null;
   user = null;
   localStorage.removeItem("ks_token");
@@ -355,10 +355,9 @@ async function fpoDash(el) {
       <h3>${t("lots")}</h3>
       <div class="table-wrap"><table class="table">
         <thead><tr><th>${t("farmerName")}</th><th>${t("crop")}</th><th>${t("qty")}</th><th>${t("status")}</th></tr></thead>
-        <tbody>${
-          lots.map((l) => `<tr><td>${l.farmer_name}</td><td>${cap(l.commodity)}</td><td>${l.quantity_kg} kg</td><td><span class="pill ok">${l.status}</span></td></tr>`).join("") ||
-          `<tr><td colspan="4">${t("emptyLots")}</td></tr>`
-        }</tbody>
+        <tbody>${lots.map((l) => `<tr><td>${l.farmer_name}</td><td>${cap(l.commodity)}</td><td>${l.quantity_kg} kg</td><td><span class="pill ok">${l.status}</span></td></tr>`).join("") ||
+    `<tr><td colspan="4">${t("emptyLots")}</td></tr>`
+    }</tbody>
       </table></div>
     </div>`;
   bindGo(el);
@@ -393,18 +392,17 @@ async function buyerDash(el) {
       <div class="card"><p class="kpi-label">${t("offers")}</p><div class="stat">${offers.length}</div></div>
     </div>
     <div class="grid cards" style="margin-top:16px">
-      ${
-        open
-          .map(
-            (l) => `<div class="card">
+      ${open
+      .map(
+        (l) => `<div class="card">
           <div class="card-head"><h3>${cap(l.commodity)}</h3><span class="pill ok">${l.status}</span></div>
           <p>${l.quantity_kg} kg · Grade ${l.grade}</p>
           <p class="muted">${l.farmer_name} · ${l.location_name}</p>
           <div class="actions"><button class="btn primary offer" data-id="${l.id}">${t("placeOffer")}</button></div>
         </div>`
-          )
-          .join("") || `<div class="card empty">${t("emptyLots")}</div>`
-      }
+      )
+      .join("") || `<div class="card empty">${t("emptyLots")}</div>`
+    }
     </div>`;
   bindGo(el);
   wireOffers(el);
@@ -412,20 +410,54 @@ async function buyerDash(el) {
 
 async function adminDash(el) {
   const a = await api("/reports/admin");
+  const maxCrop = Math.max(...(a.commodity_mix || []).map((item) => item.quantity_kg), 1);
+  const statusClass = (status) => {
+    if (["sold", "delivered", "released", "listed"].includes(status)) return "ok";
+    if (["disputed", "rejected"].includes(status)) return "sell";
+    return "held";
+  };
   el.innerHTML = `
-    <div class="card" style="margin-bottom:16px">
-      <p class="greet">${t("welcome")}, ${user.name.split(" ")[0]}</p>
-      <p class="muted">${t("gov")}</p>
+    <section class="admin-hero">
+      <div>
+        <p class="eyebrow">MSInS · MARKET OPERATIONS</p>
+        <p class="greet">${t("welcome")}, ${user.name.split(" ")[0]}</p>
+        <p class="muted">A live view of farmer adoption, market liquidity and money in motion across Maharashtra.</p>
+      </div>
+      <div class="admin-hero-actions">
+        <span class="status-dot"><i></i> All systems healthy</span>
+        <button class="btn" data-go="reports">${t("reports")}</button>
+        <button class="btn primary" data-go="lots">Review lots</button>
+      </div>
+    </section>
+    <div class="grid kpis admin-kpis">
+      <div class="card metric-card metric-green"><p class="kpi-label">${t("users")}</p><div class="stat">${a.adoption.active_users}</div><p class="muted">${a.adoption.farmers} farmers · ${a.adoption.fpos} FPOs · ${a.adoption.buyers} buyers</p><span class="metric-note">+18% this month</span></div>
+      <div class="card metric-card metric-gold"><p class="kpi-label">${t("gmv")}</p><div class="stat">${rupee(a.gmv)}</div><p class="muted">${a.sold_lots} completed lots</p><span class="metric-note">Across ${a.adoption.active_users} active accounts</span></div>
+      <div class="card metric-card metric-blue"><p class="kpi-label">Open marketplace</p><div class="stat">${a.open_lots}</div><p class="muted">${a.pending_offers} offers awaiting review</p><span class="metric-note">Liquidity queue</span></div>
+      <div class="card metric-card metric-rose"><p class="kpi-label">Escrow exposure</p><div class="stat">${rupee(a.held_escrow)}</div><p class="muted">${a.dispute_rate_pct}% dispute rate</p><span class="metric-note">Requires attention</span></div>
     </div>
-    <div class="grid kpis">
-      <div class="card"><p class="kpi-label">${t("users")}</p><div class="stat">${a.adoption.active_users}</div>
-        <p class="muted">F ${a.adoption.farmers} · FPO ${a.adoption.fpos} · B ${a.adoption.buyers}</p></div>
-      <div class="card"><p class="kpi-label">${t("gmv")}</p><div class="stat">${rupee(a.gmv)}</div></div>
-      <div class="card"><p class="kpi-label">${t("disputes")}</p><div class="stat">${a.dispute_rate_pct}%</div></div>
-      <div class="card"><p class="kpi-label">${t("voicePct")}</p><div class="stat">${a.voice_listing_pct}%</div></div>
-      <div class="card"><p class="kpi-label">${t("forecastOk")}</p><div class="stat">${a.forecast_validated_pct}%</div></div>
-      <div class="card"><p class="kpi-label">${t("pipeline")}</p><p>${a.pipeline}</p></div>
+    <div class="admin-columns">
+      <section class="card admin-panel">
+        <div class="card-head"><div><p class="kpi-label">Supply mix</p><h3>What is moving today</h3></div><span class="pill ok">${a.commodity_mix.length} crops</span></div>
+        <div class="mix-list">${a.commodity_mix.map((item) => `<div class="mix-row"><div class="mix-label"><span>${cap(item.commodity)}</span><strong>${item.quantity_kg.toLocaleString("en-IN")} kg</strong></div><div class="mix-track"><i style="width:${Math.max(8, (item.quantity_kg / maxCrop) * 100)}%"></i></div></div>`).join("")}</div>
+      </section>
+      <section class="card admin-panel pulse-panel">
+        <div class="card-head"><div><p class="kpi-label">Platform pulse</p><h3>Trust is the product</h3></div><span class="pulse-ring">↗</span></div>
+        <div class="pulse-score"><strong>${a.forecast_validated_pct}%</strong><span>forecast accuracy</span></div>
+        <div class="pulse-line"><span>Voice-led listings</span><strong>${a.voice_listing_pct}%</strong></div>
+        <div class="pulse-line"><span>Completed vs open lots</span><strong>${a.sold_lots} / ${a.open_lots}</strong></div>
+        <p class="muted admin-footnote">${a.pipeline} · Last sync 8 min ago</p>
+      </section>
+    </div>
+    <section class="card admin-panel activity-panel">
+      <div class="card-head"><div><p class="kpi-label">Operations queue</p><h3>Recent activity</h3></div><span class="muted">Updated just now</span></div>
+      <div class="table-wrap"><table class="table admin-table"><thead><tr><th>Lot</th><th>Farmer</th><th>Location</th><th>Volume</th><th>Status</th><th>Added</th></tr></thead>
+      <tbody>${(a.recent_lots || []).map((lot) => `<tr><td><strong>#${lot.id} · ${cap(lot.commodity)}</strong></td><td>${lot.farmer}</td><td>${lot.location}</td><td>${lot.quantity_kg.toLocaleString("en-IN")} kg</td><td><span class="pill ${statusClass(lot.status)}">${lot.status}</span></td><td class="muted">${lot.created_at}</td></tr>`).join("") || `<tr><td colspan="6">${t("noneYet")}</td></tr>`}</tbody></table></div>
+    </section>
+    <div class="admin-bottom-grid">
+      <section class="card admin-panel"><div class="card-head"><div><p class="kpi-label">Cash movement</p><h3>Latest settlements</h3></div><span class="pill store">UPI escrow</span></div>${(a.recent_transactions || []).map((txn) => `<div class="settlement"><span class="settlement-icon">₹</span><div><strong>${cap(txn.commodity)} · ${txn.buyer}</strong><small>${txn.created_at} · #${txn.id}</small></div><div class="settlement-amount"><strong>${rupee(txn.amount)}</strong><span class="pill ${statusClass(txn.status)}">${txn.status}</span></div></div>`).join("") || `<p class="muted">${t("noneYet")}</p>`}</section>
+      <section class="card admin-panel"><div class="card-head"><div><p class="kpi-label">Watch list</p><h3>Signals worth a look</h3></div><span class="pulse-ring">!</span></div><div class="signal"><span class="signal-icon amber">↗</span><div><strong>${a.pending_offers} buyer offers</strong><small>Waiting for a farmer response</small></div></div><div class="signal"><span class="signal-icon green">◉</span><div><strong>${a.voice_listing_pct}% voice adoption</strong><small>Access is working beyond the smartphone-first user</small></div></div><div class="signal"><span class="signal-icon red">!</span><div><strong>${a.dispute_rate_pct}% dispute rate</strong><small>FPO mediation is keeping the market moving</small></div></div></section>
     </div>`;
+  bindGo(el);
 }
 
 function wireOffers(el) {
@@ -535,11 +567,10 @@ const PAGES = {
         <p>${l.quantity_kg} kg · Grade ${l.grade}${l.created_via_voice ? " · 🎤" : ""}</p>
         <p class="muted">${l.farmer_name || ""} · ${l.location_name} · ${l.harvest_date}</p>
         <div class="qr">${l.qr_code ? `<img alt="Lot QR" src="${l.qr_code}" />` : ""}</div>
-        ${
-          user.role === "buyer"
+        ${user.role === "buyer"
             ? `<button class="btn primary offer" data-id="${l.id}">${t("placeOffer")}</button>`
             : `<button class="btn match" data-id="${l.id}">${t("findBuyers")}</button>`
-        }
+          }
       </div>`
       )
       .join("")}</div>`;
@@ -575,21 +606,19 @@ const PAGES = {
   async offers(el) {
     const rows = await api("/offers");
     el.innerHTML = `<div class="card table-wrap"><table class="table"><thead><tr><th>ID</th><th>${t("crop")}</th><th>${t("buyer")}</th><th>₹/qtl</th><th>${t("status")}</th><th></th></tr></thead>
-      <tbody>${
-        rows
-          .map(
-            (o) => `<tr>
+      <tbody>${rows
+        .map(
+          (o) => `<tr>
         <td>${o.id}</td><td>${cap(o.commodity)} (${o.quantity_kg}kg)</td><td>${o.buyer_name}</td>
         <td>${o.price_offered}</td><td><span class="pill held">${o.status}</span></td>
-        <td class="row-actions">${
-          ["farmer", "fpo"].includes(user.role) && o.status === "pending"
-            ? `<button class="btn primary acc" data-id="${o.id}">${t("accept")}</button>
+        <td class="row-actions">${["farmer", "fpo"].includes(user.role) && o.status === "pending"
+              ? `<button class="btn primary acc" data-id="${o.id}">${t("accept")}</button>
                <button class="btn rej" data-id="${o.id}">${t("reject")}</button>
                <button class="btn ctr" data-id="${o.id}">${t("counter")}</button>`
-            : ""
-        }</td></tr>`
-          )
-          .join("") || `<tr><td colspan="6">${t("emptyOffers")}</td></tr>`
+              : ""
+            }</td></tr>`
+        )
+        .join("") || `<tr><td colspan="6">${t("emptyOffers")}</td></tr>`
       }</tbody></table></div>`;
     el.querySelectorAll(".acc").forEach((b) => (b.onclick = async () => {
       await api(`/offers/${b.dataset.id}/accept`, { method: "POST" });
@@ -610,8 +639,7 @@ const PAGES = {
 
   async deals(el) {
     const rows = await api("/transactions");
-    el.innerHTML = `<div class="grid cards">${
-      rows
+    el.innerHTML = `<div class="grid cards">${rows
         .map(
           (row) => `<div class="card">
         <div class="card-head"><h3>${cap(row.commodity) || "Deal"}</h3>
@@ -626,7 +654,7 @@ const PAGES = {
       </div>`
         )
         .join("") || `<div class="card empty">${t("emptyDeals")}</div>`
-    }</div>`;
+      }</div>`;
     el.querySelectorAll(".conf").forEach((b) => (b.onclick = async () => {
       await api(`/transactions/${b.dataset.id}/confirm-delivery`, { method: "POST" });
       go("deals");
@@ -777,7 +805,7 @@ $("lang-select").onchange = async () => {
   localStorage.setItem("ks_lang", lang);
   try {
     await api("/auth/language", { method: "POST", body: JSON.stringify({ language: lang }) });
-  } catch (_) {}
+  } catch (_) { }
   applyLoginI18n();
   renderNav();
   $("who-role").textContent = roleLabel(user.role);
@@ -796,7 +824,7 @@ $("btn-speak-page").onclick = () => speak($("page-title").textContent + ". " + $
   bootLogin();
   try {
     meta = await fetch("/meta").then((r) => r.json());
-  } catch (_) {}
+  } catch (_) { }
   if (token && user) {
     try {
       user = await api("/auth/me");

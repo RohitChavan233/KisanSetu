@@ -5,7 +5,7 @@ from random import Random
 from sqlalchemy.orm import Session
 
 from app.config import COMMODITIES, DEMO_OTP, MANDIS
-from app.models import ColdStorage, FPO, Lot, Offer, OtpCode, PriceRecord, Transaction, User
+from app.models import ColdStorage, FPO, Lot, Offer, OtpCode, PriceAlert, PriceRecord, Transaction, User
 from app.services.qr import lot_certificate_qr
 
 BASE = {
@@ -36,6 +36,8 @@ COORDS = {
 
 def seed_if_empty(db: Session) -> None:
     if db.query(User).first():
+        _seed_demo_activity(db)
+        db.commit()
         return
     rng = Random(42)
 
@@ -255,4 +257,96 @@ def seed_if_empty(db: Session) -> None:
             used=False,
         )
     )
+    _seed_demo_activity(db)
     db.commit()
+
+
+def _seed_demo_activity(db: Session) -> None:
+    """Add a compact, repeatable marketplace snapshot to an existing demo database."""
+    if db.query(Lot).count() >= 9:
+        return
+
+    fpo = db.query(FPO).first()
+    farmers = db.query(User).filter(User.role == "farmer").all()
+    buyers = db.query(User).filter(User.role == "buyer").all()
+    if not fpo or len(farmers) < 2 or len(buyers) < 2:
+        return
+
+    new_users = [
+        User(name="Meena Shinde", phone="9876543220", role="farmer", language="mr", district="Nashik", geo_lat=20.02, geo_lng=73.81, fpo_id=fpo.id, trust_score=84),
+        User(name="Vilas Pawar", phone="9876543221", role="farmer", language="mr", district="Pune", geo_lat=18.56, geo_lng=73.82, fpo_id=fpo.id, trust_score=79),
+        User(name="Asha Gaikwad", phone="9876543222", role="farmer", language="hi", district="Aurangabad", geo_lat=19.88, geo_lng=75.34, fpo_id=fpo.id, trust_score=87),
+        User(name="Sharad Borse", phone="9876543223", role="farmer", language="mr", district="Nashik", geo_lat=20.00, geo_lng=73.78, fpo_id=fpo.id, trust_score=82),
+        User(name="Western Harvest Traders", phone="9876543224", role="buyer", language="en", district="Pune", geo_lat=18.54, geo_lng=73.85, trust_score=86, on_time_payment_pct=93, quality_accept_pct=90),
+        User(name="Sahyadri Retail Link", phone="9876543225", role="buyer", language="en", district="Mumbai", geo_lat=19.08, geo_lng=72.88, trust_score=91, on_time_payment_pct=97, quality_accept_pct=95),
+    ]
+    db.add_all(new_users)
+    db.flush()
+    farmers.extend(new_users[:4])
+    buyers.extend(new_users[4:])
+
+    today = date.today()
+    lot_specs = [
+        (farmers[3], "onion", 640, "A", "Pune", "offered", 2, "medium"),
+        (farmers[4], "tomato", 280, "A", "Nashik", "sold", 6, "low"),
+        (farmers[5], "soybean", 1150, "B", "Aurangabad", "listed", 1, "high"),
+        (farmers[1], "grapes", 360, "A", "Pune", "delivered", 11, "low"),
+        (farmers[2], "wheat", 780, "B", "Aurangabad", "offered", 3, "medium"),
+        (farmers[0], "cotton", 520, "A", "Nashik", "listed", 0, "medium"),
+        (farmers[3], "onion", 410, "B", "Nashik", "sold", 16, "low"),
+    ]
+    created_lots = []
+    for farmer, commodity, quantity, grade, location, status, age, urgency in lot_specs:
+        lot = Lot(
+            farmer_id=farmer.id,
+            commodity=commodity,
+            quantity_kg=quantity,
+            grade=grade,
+            harvest_date=today - timedelta(days=max(1, age + 1)),
+            geo_lat=farmer.geo_lat,
+            geo_lng=farmer.geo_lng,
+            location_name=location,
+            status=status,
+            liquidity_urgency=urgency,
+            created_at=datetime.utcnow() - timedelta(days=age, hours=2),
+            voice_original="",
+            created_via_voice=commodity in ("tomato", "soybean", "cotton"),
+        )
+        db.add(lot)
+        db.flush()
+        lot.qr_code = lot_certificate_qr(lot.id, lot.commodity, lot.quantity_kg, lot.grade)
+        created_lots.append(lot)
+
+    prices = {"onion": 1920, "tomato": 1510, "soybean": 4480, "grapes": 5720, "wheat": 2520, "cotton": 7010}
+    for index, lot in enumerate(created_lots):
+        buyer = buyers[index % len(buyers)]
+        accepted = lot.status in ("sold", "delivered")
+        offer = Offer(
+            lot_id=lot.id,
+            buyer_id=buyer.id,
+            price_offered=prices[lot.commodity] + (index * 15),
+            status="accepted" if accepted else "pending",
+            created_at=lot.created_at + timedelta(hours=5),
+        )
+        db.add(offer)
+        db.flush()
+        if accepted:
+            db.add(
+                Transaction(
+                    offer_id=offer.id,
+                    escrow_status="released" if lot.status == "delivered" else "held",
+                    amount=round(lot.quantity_kg / 100 * offer.price_offered, 2),
+                    payment_ref=f"UPI-KS-{91000 + lot.id}",
+                    delivery_confirmed_at=datetime.utcnow() - timedelta(days=max(1, index)) if lot.status == "delivered" else None,
+                    created_at=offer.created_at + timedelta(hours=8),
+                )
+            )
+
+    db.add_all(
+        [
+            PriceAlert(user_id=farmers[3].id, commodity="onion", mandi="Nashik", threshold=2050, direction="above", triggered=False),
+            PriceAlert(user_id=farmers[4].id, commodity="tomato", mandi="Nashik", threshold=1600, direction="above", triggered=True),
+            PriceAlert(user_id=farmers[5].id, commodity="soybean", mandi="Aurangabad", threshold=4400, direction="below", triggered=False),
+        ]
+    )
+    db.flush()
